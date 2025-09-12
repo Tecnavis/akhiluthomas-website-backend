@@ -12,18 +12,29 @@ const app = express();
 // ==========================
 // MIDDLEWARE
 // ==========================
-app.use(cors());
+app.use(cors({
+  origin: "*" // allow all domains, or replace "*" with your frontend URL for security
+}));
 app.use(express.json());
 
 // ==========================
 // MONGODB CONNECTION
 // ==========================
-mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/blogdb", {
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI not defined in environment variables!");
+  process.exit(1);
+}
+
+mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
 .then(() => console.log("✅ MongoDB connected"))
-.catch(err => console.error("❌ MongoDB connection error:", err));
+.catch(err => {
+  console.error("❌ MongoDB connection error:", err);
+  process.exit(1);
+});
 
 // ==========================
 // BLOG SCHEMA & MODEL
@@ -31,7 +42,7 @@ mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/blogdb", {
 const blogSchema = new mongoose.Schema({
   title: { type: String, required: true },
   author: { type: String, required: true },
-  date: { type: Date, default: Date.now }, // auto-generate if not provided
+  date: { type: Date, default: Date.now },
   image: { type: String, required: true },
   summary: { type: String, required: true },
   content: { type: String, required: true }
@@ -83,10 +94,7 @@ app.get("/api/blogs/:id", async (req, res) => {
 // CREATE new blog
 app.post("/api/blogs", async (req, res) => {
   try {
-    // convert date string (YYYY-MM-DD) to Date object
-    if (req.body.date) {
-      req.body.date = new Date(req.body.date);
-    }
+    if (req.body.date) req.body.date = new Date(req.body.date);
     const blog = new Blog(req.body);
     await blog.save();
     res.json({ message: "Blog created successfully", blog });
@@ -99,10 +107,7 @@ app.post("/api/blogs", async (req, res) => {
 // UPDATE blog
 app.put("/api/blogs/:id", async (req, res) => {
   try {
-    // convert date string (YYYY-MM-DD) to Date object
-    if (req.body.date) {
-      req.body.date = new Date(req.body.date);
-    }
+    if (req.body.date) req.body.date = new Date(req.body.date);
     const blog = await Blog.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!blog) return res.status(404).json({ error: "Blog not found" });
     res.json({ message: "Blog updated successfully", blog });
