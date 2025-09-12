@@ -12,9 +12,7 @@ const app = express();
 // ==========================
 // MIDDLEWARE
 // ==========================
-app.use(cors({
-  origin: "*" // allow all domains, or replace "*" with your frontend URL for security
-}));
+app.use(cors({ origin: "*" })); // Allow all origins for now, you can restrict to your frontend URL
 app.use(express.json());
 
 // ==========================
@@ -26,15 +24,12 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-mongoose.connect(MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log("✅ MongoDB connected"))
-.catch(err => {
-  console.error("❌ MongoDB connection error:", err);
-  process.exit(1);
-});
+mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => {
+    console.error("❌ MongoDB connection error:", err);
+    process.exit(1);
+  });
 
 // ==========================
 // BLOG SCHEMA & MODEL
@@ -54,11 +49,10 @@ const Blog = mongoose.model("Blog", blogSchema);
 // ROUTES
 // ==========================
 
-// GET all blogs with pagination & search
+// GET all blogs
 app.get("/api/blogs", async (req, res) => {
   try {
     const { page = 1, limit = 6, search = "" } = req.query;
-
     let query = {};
     if (search) {
       query.$or = [
@@ -66,12 +60,10 @@ app.get("/api/blogs", async (req, res) => {
         { author: { $regex: search, $options: "i" } }
       ];
     }
-
     const blogs = await Blog.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
-
     res.json(blogs);
   } catch (err) {
     console.error(err);
@@ -79,7 +71,7 @@ app.get("/api/blogs", async (req, res) => {
   }
 });
 
-// GET single blog by ID
+// GET single blog
 app.get("/api/blogs/:id", async (req, res) => {
   try {
     const blog = await Blog.findById(req.params.id);
@@ -130,7 +122,7 @@ app.delete("/api/blogs/:id", async (req, res) => {
 });
 
 // ==========================
-// SERVER START
+// START SERVER
 // ==========================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
