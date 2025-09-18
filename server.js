@@ -182,16 +182,21 @@ app.delete("/api/blogs/:id", async (req, res) => {
 const publicPath = path.join(__dirname, "public");
 app.use(express.static(publicPath));
 
-// SEO-friendly blog routes (serve blog-single.html for slugs)
+// Serve blog-single.html for /blogs/:slug
 app.get("/blogs/:slug", (req, res) => {
   res.sendFile(path.join(publicPath, "blog-single.html"));
 });
 
-// Redirect old query style ?slug= to /blogs/:slug
+// Redirect old query style ?slug=
 app.get("/blog-single.html", (req, res) => {
   const slug = req.query.slug;
   if (slug) return res.redirect(301, `/blogs/${slug}`);
   res.sendFile(path.join(publicPath, "blog-single.html"));
+});
+
+// Catch-all fallback (for React-like routing or unknown paths)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(publicPath, "index.html"));
 });
 
 // ==========================
