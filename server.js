@@ -82,7 +82,7 @@ blogSchema.pre("save", async function (next) {
 const Blog = mongoose.model("Blog", blogSchema);
 
 // ==========================
-// API ROUTES
+// ROUTES
 // ==========================
 
 // GET all blogs
@@ -182,12 +182,12 @@ app.delete("/api/blogs/:id", async (req, res) => {
 const publicPath = path.join(__dirname, "public");
 app.use(express.static(publicPath));
 
-// SEO-friendly blog routes (serve blog-single.html for slugs)
+// SEO-friendly blog routes
 app.get("/blogs/:slug", (req, res) => {
   res.sendFile(path.join(publicPath, "blog-single.html"));
 });
 
-// Redirect old query style ?slug= to /blogs/:slug
+// Redirect old query style ?slug=
 app.get("/blog-single.html", (req, res) => {
   const slug = req.query.slug;
   if (slug) return res.redirect(301, `/blogs/${slug}`);
