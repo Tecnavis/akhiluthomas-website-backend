@@ -35,7 +35,7 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
 // ==========================
 const blogSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  slug: { type: String, unique: true }, // new field
+  slug: { type: String, unique: true, required: true },
   author: { type: String, required: true },
   date: { type: Date, default: Date.now },
   image: { type: String, required: true },
@@ -43,14 +43,23 @@ const blogSchema = new mongoose.Schema({
   content: { type: String, required: true }
 }, { timestamps: true });
 
-// Slug generator middleware
-blogSchema.pre("save", function (next) {
-  if (!this.slug) {
-    this.slug = this.title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)+/g, "");
+// Slug generator middleware (ensures unique slug)
+blogSchema.pre("save", async function (next) {
+  if (!this.isModified("title") && this.slug) return next();
+
+  let baseSlug = this.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
+
+  let slug = baseSlug;
+  let count = 1;
+
+  while (await mongoose.models.Blog.findOne({ slug })) {
+    slug = `${baseSlug}-${count++}`;
   }
+
+  this.slug = slug;
   next();
 });
 
@@ -111,6 +120,23 @@ app.post("/api/blogs", async (req, res) => {
 app.put("/api/blogs/:id", async (req, res) => {
   try {
     if (req.body.date) req.body.date = new Date(req.body.date);
+
+    // If title changes, regenerate unique slug
+    if (req.body.title) {
+      let baseSlug = req.body.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)+/g, "");
+
+      let slug = baseSlug;
+      let count = 1;
+
+      while (await Blog.findOne({ slug, _id: { $ne: req.params.id } })) {
+        slug = `${baseSlug}-${count++}`;
+      }
+      req.body.slug = slug;
+    }
+
     const blog = await Blog.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!blog) return res.status(404).json({ error: "Blog not found" });
     res.json({ message: "Blog updated successfully", blog });
