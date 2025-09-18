@@ -1,7 +1,6 @@
 // ==========================
 // server.js
 // ==========================
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -12,7 +11,7 @@ const app = express();
 // ==========================
 // MIDDLEWARE
 // ==========================
-app.use(cors({ origin: "*" })); // Allow all origins for now, you can restrict to your frontend URL
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // ==========================
@@ -36,12 +35,24 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
 // ==========================
 const blogSchema = new mongoose.Schema({
   title: { type: String, required: true },
+  slug: { type: String, unique: true }, // new field
   author: { type: String, required: true },
   date: { type: Date, default: Date.now },
   image: { type: String, required: true },
   summary: { type: String, required: true },
   content: { type: String, required: true }
 }, { timestamps: true });
+
+// Slug generator middleware
+blogSchema.pre("save", function (next) {
+  if (!this.slug) {
+    this.slug = this.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)+/g, "");
+  }
+  next();
+});
 
 const Blog = mongoose.model("Blog", blogSchema);
 
@@ -71,10 +82,10 @@ app.get("/api/blogs", async (req, res) => {
   }
 });
 
-// GET single blog
-app.get("/api/blogs/:id", async (req, res) => {
+// GET single blog by slug
+app.get("/api/blogs/slug/:slug", async (req, res) => {
   try {
-    const blog = await Blog.findById(req.params.id);
+    const blog = await Blog.findOne({ slug: req.params.slug });
     if (!blog) return res.status(404).json({ error: "Blog not found" });
     res.json(blog);
   } catch (err) {
