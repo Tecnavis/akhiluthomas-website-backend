@@ -36,18 +36,18 @@ mongoose
 // ==========================
 const blogSchema = new mongoose.Schema(
   {
-    title: { type: String, required: [true, "Title is required"] },
-    slug: { type: String, unique: true, required: true },
-    author: { type: String, required: [true, "Author is required"] },
+    title: { type: String, required: true },
+    slug: { type: String, unique: true }, // FIX: removed "required: true"
+    author: { type: String, required: true },
     date: { type: Date, default: Date.now },
-    image: { type: String, required: [true, "Image URL is required"] },
-    summary: { type: String, required: [true, "Summary is required"] },
-    content: { type: String, required: [true, "Content is required"] },
+    image: { type: String, required: true },
+    summary: { type: String, required: true },
+    content: { type: String, required: true },
   },
   { timestamps: true }
 );
 
-// Slug generator middleware (ensures unique slug)
+// Slug generator middleware (ensures unique slug if missing)
 blogSchema.pre("save", async function (next) {
   if (!this.isModified("title") && this.slug) return next();
 
@@ -73,7 +73,7 @@ const Blog = mongoose.model("Blog", blogSchema);
 // ROUTES
 // ==========================
 
-// GET all blogs (with search + pagination)
+// GET all blogs (with pagination + search)
 app.get("/api/blogs", async (req, res) => {
   try {
     const { page = 1, limit = 6, search = "" } = req.query;
@@ -90,19 +90,27 @@ app.get("/api/blogs", async (req, res) => {
       .limit(Number(limit));
     res.json(blogs);
   } catch (err) {
-    console.error("❌ Get Blogs Error:", err.message);
-    res.status(500).json({ error: "Failed to fetch blogs" });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// GET total blog count (for pagination)
+// GET total blog count
 app.get("/api/blogs/count", async (req, res) => {
   try {
-    const count = await Blog.countDocuments();
+    const { search = "" } = req.query;
+    let query = {};
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { author: { $regex: search, $options: "i" } },
+      ];
+    }
+    const count = await Blog.countDocuments(query);
     res.json({ count });
   } catch (err) {
-    console.error("❌ Blog Count Error:", err.message);
-    res.status(500).json({ error: "Failed to fetch blog count" });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
@@ -113,8 +121,8 @@ app.get("/api/blogs/slug/:slug", async (req, res) => {
     if (!blog) return res.status(404).json({ error: "Blog not found" });
     res.json(blog);
   } catch (err) {
-    console.error("❌ Get Blog Error:", err.message);
-    res.status(500).json({ error: "Failed to fetch blog" });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
@@ -122,26 +130,29 @@ app.get("/api/blogs/slug/:slug", async (req, res) => {
 app.post("/api/blogs", async (req, res) => {
   try {
     if (req.body.date) req.body.date = new Date(req.body.date);
+
+    // Generate slug manually if missing
+    if (!req.body.slug && req.body.title) {
+      let baseSlug = req.body.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)+/g, "");
+
+      let slug = baseSlug;
+      let count = 1;
+
+      while (await Blog.findOne({ slug })) {
+        slug = `${baseSlug}-${count++}`;
+      }
+      req.body.slug = slug;
+    }
+
     const blog = new Blog(req.body);
     await blog.save();
     res.json({ message: "Blog created successfully", blog });
   } catch (err) {
-    console.error("❌ Blog Save Error:", err.message);
-
-    // Duplicate slug/title
-    if (err.code === 11000) {
-      return res
-        .status(400)
-        .json({ error: "A blog with this title already exists. Please choose another title." });
-    }
-
-    // Validation errors
-    if (err.name === "ValidationError") {
-      const messages = Object.values(err.errors).map((val) => val.message);
-      return res.status(400).json({ error: messages.join(", ") });
-    }
-
-    res.status(400).json({ error: "Something went wrong while creating the blog." });
+    console.error(err);
+    res.status(400).json({ error: "Failed to create blog", details: err.message });
   }
 });
 
@@ -150,6 +161,7 @@ app.put("/api/blogs/:id", async (req, res) => {
   try {
     if (req.body.date) req.body.date = new Date(req.body.date);
 
+    // If title changes, regenerate unique slug
     if (req.body.title) {
       let baseSlug = req.body.title
         .toLowerCase()
@@ -165,29 +177,12 @@ app.put("/api/blogs/:id", async (req, res) => {
       req.body.slug = slug;
     }
 
-    const blog = await Blog.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
-
+    const blog = await Blog.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!blog) return res.status(404).json({ error: "Blog not found" });
-
     res.json({ message: "Blog updated successfully", blog });
   } catch (err) {
-    console.error("❌ Blog Update Error:", err.message);
-
-    if (err.code === 11000) {
-      return res
-        .status(400)
-        .json({ error: "A blog with this title already exists. Please choose another title." });
-    }
-
-    if (err.name === "ValidationError") {
-      const messages = Object.values(err.errors).map((val) => val.message);
-      return res.status(400).json({ error: messages.join(", ") });
-    }
-
-    res.status(400).json({ error: "Something went wrong while updating the blog." });
+    console.error(err);
+    res.status(400).json({ error: "Failed to update blog", details: err.message });
   }
 });
 
@@ -198,8 +193,8 @@ app.delete("/api/blogs/:id", async (req, res) => {
     if (!blog) return res.status(404).json({ error: "Blog not found" });
     res.json({ message: "Blog deleted successfully" });
   } catch (err) {
-    console.error("❌ Blog Delete Error:", err.message);
-    res.status(500).json({ error: "Something went wrong while deleting the blog." });
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete blog" });
   }
 });
 
