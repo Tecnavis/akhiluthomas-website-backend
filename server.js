@@ -23,9 +23,10 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose
+  .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => {
+  .catch((err) => {
     console.error("❌ MongoDB connection error:", err);
     process.exit(1);
   });
@@ -33,15 +34,18 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
 // ==========================
 // BLOG SCHEMA & MODEL
 // ==========================
-const blogSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  slug: { type: String, unique: true, required: true },
-  author: { type: String, required: true },
-  date: { type: Date, default: Date.now },
-  image: { type: String, required: true },
-  summary: { type: String, required: true },
-  content: { type: String, required: true }
-}, { timestamps: true });
+const blogSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: [true, "Title is required"] },
+    slug: { type: String, unique: true, required: true },
+    author: { type: String, required: [true, "Author is required"] },
+    date: { type: Date, default: Date.now },
+    image: { type: String, required: [true, "Image URL is required"] },
+    summary: { type: String, required: [true, "Summary is required"] },
+    content: { type: String, required: [true, "Content is required"] },
+  },
+  { timestamps: true }
+);
 
 // Slug generator middleware (ensures unique slug)
 blogSchema.pre("save", async function (next) {
@@ -69,7 +73,7 @@ const Blog = mongoose.model("Blog", blogSchema);
 // ROUTES
 // ==========================
 
-// GET all blogs
+// GET all blogs (with search + pagination)
 app.get("/api/blogs", async (req, res) => {
   try {
     const { page = 1, limit = 6, search = "" } = req.query;
@@ -77,7 +81,7 @@ app.get("/api/blogs", async (req, res) => {
     if (search) {
       query.$or = [
         { title: { $regex: search, $options: "i" } },
-        { author: { $regex: search, $options: "i" } }
+        { author: { $regex: search, $options: "i" } },
       ];
     }
     const blogs = await Blog.find(query)
@@ -86,8 +90,19 @@ app.get("/api/blogs", async (req, res) => {
       .limit(Number(limit));
     res.json(blogs);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    console.error("❌ Get Blogs Error:", err.message);
+    res.status(500).json({ error: "Failed to fetch blogs" });
+  }
+});
+
+// GET total blog count (for pagination)
+app.get("/api/blogs/count", async (req, res) => {
+  try {
+    const count = await Blog.countDocuments();
+    res.json({ count });
+  } catch (err) {
+    console.error("❌ Blog Count Error:", err.message);
+    res.status(500).json({ error: "Failed to fetch blog count" });
   }
 });
 
@@ -98,8 +113,8 @@ app.get("/api/blogs/slug/:slug", async (req, res) => {
     if (!blog) return res.status(404).json({ error: "Blog not found" });
     res.json(blog);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    console.error("❌ Get Blog Error:", err.message);
+    res.status(500).json({ error: "Failed to fetch blog" });
   }
 });
 
@@ -111,8 +126,22 @@ app.post("/api/blogs", async (req, res) => {
     await blog.save();
     res.json({ message: "Blog created successfully", blog });
   } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: "Failed to create blog", details: err });
+    console.error("❌ Blog Save Error:", err.message);
+
+    // Duplicate slug/title
+    if (err.code === 11000) {
+      return res
+        .status(400)
+        .json({ error: "A blog with this title already exists. Please choose another title." });
+    }
+
+    // Validation errors
+    if (err.name === "ValidationError") {
+      const messages = Object.values(err.errors).map((val) => val.message);
+      return res.status(400).json({ error: messages.join(", ") });
+    }
+
+    res.status(400).json({ error: "Something went wrong while creating the blog." });
   }
 });
 
@@ -121,7 +150,6 @@ app.put("/api/blogs/:id", async (req, res) => {
   try {
     if (req.body.date) req.body.date = new Date(req.body.date);
 
-    // If title changes, regenerate unique slug
     if (req.body.title) {
       let baseSlug = req.body.title
         .toLowerCase()
@@ -137,12 +165,29 @@ app.put("/api/blogs/:id", async (req, res) => {
       req.body.slug = slug;
     }
 
-    const blog = await Blog.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const blog = await Blog.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
+
     if (!blog) return res.status(404).json({ error: "Blog not found" });
+
     res.json({ message: "Blog updated successfully", blog });
   } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: "Failed to update blog", details: err });
+    console.error("❌ Blog Update Error:", err.message);
+
+    if (err.code === 11000) {
+      return res
+        .status(400)
+        .json({ error: "A blog with this title already exists. Please choose another title." });
+    }
+
+    if (err.name === "ValidationError") {
+      const messages = Object.values(err.errors).map((val) => val.message);
+      return res.status(400).json({ error: messages.join(", ") });
+    }
+
+    res.status(400).json({ error: "Something went wrong while updating the blog." });
   }
 });
 
@@ -153,8 +198,8 @@ app.delete("/api/blogs/:id", async (req, res) => {
     if (!blog) return res.status(404).json({ error: "Blog not found" });
     res.json({ message: "Blog deleted successfully" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to delete blog" });
+    console.error("❌ Blog Delete Error:", err.message);
+    res.status(500).json({ error: "Something went wrong while deleting the blog." });
   }
 });
 
